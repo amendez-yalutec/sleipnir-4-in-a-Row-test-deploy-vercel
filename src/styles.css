@@ -38,7 +38,7 @@ body {
 }
 
 .page {
-  max-width: 720px;
+  max-width: 980px;
   margin: 0 auto;
   padding: 32px 16px 48px;
   display: flex;
@@ -66,7 +66,8 @@ h1 {
   gap: 8px;
 }
 
-.controls button {
+.controls button,
+.tab {
   font: inherit;
   padding: 8px 14px;
   border-radius: 999px;
@@ -76,7 +77,8 @@ h1 {
   cursor: pointer;
 }
 
-.controls button.active {
+.controls button.active,
+.tab.active {
   background: var(--board);
   border-color: var(--board);
   color: #fff;
@@ -210,6 +212,258 @@ footer {
   color: var(--muted);
   font-size: 0.8rem;
   max-width: 460px;
+}
+
+.tab {
+  text-decoration: none;
+}
+
+.demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* ── Tablero en vivo ─────────────────────────────────────────────── */
+
+.live {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.live h2 {
+  font-size: 1.05rem;
+  margin: 12px 0 4px;
+}
+
+.live-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge {
+  font-size: 0.8rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.badge.on {
+  color: #16a34a;
+  border-color: #16a34a;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.warn,
+.announce {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.warn {
+  background: rgb(234 179 8 / 0.15);
+  border: 1px solid rgb(234 179 8 / 0.5);
+}
+
+.announce {
+  background: rgb(59 130 246 / 0.12);
+  border: 1px solid rgb(59 130 246 / 0.4);
+  font-weight: 600;
+}
+
+.games {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.players {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.player .dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.player.p1 .dot {
+  background: var(--p1);
+}
+
+.player.p2 .dot {
+  background: var(--p2);
+}
+
+.player.to-move {
+  font-weight: 700;
+}
+
+.player.to-move::after {
+  content: "← turno";
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.mini-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+  padding: 6px;
+  background: var(--board);
+  border-radius: 8px;
+  max-width: 260px;
+}
+
+.mini-cell {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--hole);
+}
+
+.mini-cell.p1 {
+  background: var(--p1);
+}
+
+.mini-cell.p2 {
+  background: var(--p2);
+}
+
+.mini-cell.win {
+  outline: 2px solid #fde047;
+  outline-offset: -2px;
+}
+
+.replay .mini-board {
+  max-width: 320px;
+}
+
+.two-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.standings {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.standings th,
+.standings td {
+  padding: 6px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.standings .left {
+  text-align: left;
+}
+
+.standings th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.recent {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recent li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.link {
+  all: unset;
+  cursor: pointer;
+  color: var(--p2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--p2);
+}
+
+.connect summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.connect pre {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+
+.live a {
+  color: var(--p2);
 }
 
 @media (prefers-reduced-motion: reduce) {
