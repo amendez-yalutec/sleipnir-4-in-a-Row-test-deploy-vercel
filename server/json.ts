@@ -102,7 +102,7 @@ export function stateSnapshot(state: ArbiterState, teams: TeamInfo[], extra: Rec
     phase: state.phase,
     announcement: state.announcement,
     ...extra,
-    teams: teams.map((t) => ({ id: t.id, name: t.name })),
+    teams: teams.map((t) => ({ id: t.id, name: t.name, ...(t.test && { test: true }) })),
     standings,
     live: recentFirst.filter((g) => !g.result).map((g) => gameJson(g, names)),
     recent: recentFirst

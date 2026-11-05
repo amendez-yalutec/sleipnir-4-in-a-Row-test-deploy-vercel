@@ -29,7 +29,7 @@ const teamIdAt = (game: Game, p: 1 | 2) => {
 export function computeStandings(teams: TeamInfo[], games: Game[]): StandingRow[] {
   const league = games.filter((g) => g.kind === "league" && g.result);
   const rows = new Map(
-    teams.map((t) => [
+    teams.filter((t) => !t.test).map((t) => [
       t.id,
       { team: { id: t.id, name: t.name, members: [...t.members] }, played: 0, won: 0, drawn: 0, lost: 0, points: 0 },
     ]),

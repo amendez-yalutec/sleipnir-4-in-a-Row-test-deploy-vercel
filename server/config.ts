@@ -26,7 +26,10 @@ function number(env: Env, name: string, fallback: number): number {
   return value;
 }
 
-/** `ARBITRO_TEAMS="id:token:Nombre;id2:token2:Nombre 2"` (mismo formato que MOCK_TEAMS del mock del equipo). */
+/**
+ * `ARBITRO_TEAMS="id:token:Nombre;id2:token2:Nombre 2"` (mismo formato que MOCK_TEAMS del mock del equipo).
+ * Un `~` antes del id marca un equipo de prueba: `~prueba1:tok:Prueba 1`.
+ */
 function parseTeams(raw: string | undefined): TeamInfo[] {
   if (raw === undefined || raw.trim() === "") return DEFAULT_TEAMS;
   return raw
@@ -34,9 +37,10 @@ function parseTeams(raw: string | undefined): TeamInfo[] {
     .filter((entry) => entry.trim() !== "")
     .map((entry) => {
       const [rawId = "", rawToken = "", ...rest] = entry.split(":");
-      const [id, token, name] = [rawId.trim(), rawToken.trim(), rest.join(":").trim()];
+      const test = rawId.trim().startsWith("~");
+      const [id, token, name] = [rawId.trim().replace(/^~/, ""), rawToken.trim(), rest.join(":").trim()];
       if (!id || !token || !name) throw new Error(`ARBITRO_TEAMS: "${entry}" no tiene la forma id:token:Nombre.`);
-      return { id, token, name, members: [] };
+      return { id, token, name, members: [], ...(test && { test: true }) };
     });
 }
 

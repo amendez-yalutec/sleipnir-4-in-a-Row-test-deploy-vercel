@@ -19,6 +19,8 @@ export interface TeamInfo {
   name: string;
   token: string;
   members: string[];
+  /** Equipo de prueba: juega, pero no aparece en la tabla (standing null en /api/me). */
+  test?: boolean;
 }
 
 export type Seat = { type: "team"; id: string } | { type: "house"; bot: HouseBot };

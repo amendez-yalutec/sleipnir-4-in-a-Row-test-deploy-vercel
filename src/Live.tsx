@@ -32,99 +32,138 @@ type Snapshot = {
   rules: { deadline_ms: number; absence_ms: number };
   storage: "memory" | "redis";
   shared_state: boolean;
+  teams: { id: string; name: string; test?: true }[];
   standings: Standing[];
   live: Game[];
   recent: GameSummary[];
 };
 
 const PHASES: Record<string, string> = {
-  practice: "Prácticas",
+  practice: "Práctica",
   frozen: "Congelado",
   league: "Liga",
   playoffs: "Playoffs",
   finished: "Terminado",
 };
 const KINDS: Record<string, string> = {
-  practice: "práctica",
-  friendly: "amistoso",
-  league: "liga",
-  third_place: "tercer lugar",
-  final: "final",
+  practice: "Práctica",
+  friendly: "Amistoso",
+  league: "Liga",
+  third_place: "Tercer lugar",
+  final: "Final",
 };
 const REASONS: Record<string, string> = {
-  connect4: "cuatro en línea",
-  draw: "empate",
-  illegal_move: "jugada ilegal",
-  timeout: "se le acabó el tiempo",
-  absent: "ausencia",
-  admin: "decisión del árbitro",
+  connect4: "por cuatro en línea",
+  illegal_move: "por jugada ilegal",
+  timeout: "por tiempo",
+  absent: "por ausencia",
+  admin: "por decisión del árbitro",
 };
 
-function MiniBoard({ board, winning }: { board: number[][]; winning?: [number, number][] }) {
-  const isWin = (r: number, c: number) => winning?.some(([wr, wc]) => wr === r && wc === c) ?? false;
+const timeOf = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "";
+
+/** Fila de la última ficha jugada (la más alta ocupada en esa columna). */
+function lastCell(game: Game): [number, number] | null {
+  const last = game.moves.at(-1);
+  if (!last) return null;
+  for (let r = game.board.length - 1; r >= 0; r--) if (game.board[r][last.column] !== 0) return [r, last.column];
+  return null;
+}
+
+function Board({ game }: { game: Game }) {
+  const last = lastCell(game);
+  const winning = game.result?.winning_cells ?? [];
+  const rows = game.board.length;
   return (
-    <div className="mini-board" role="img" aria-label="Tablero">
-      {[...board].reverse().map((row, i) => {
-        const r = board.length - 1 - i; // fila 0 abajo
-        return row.map((cell, c) => <span key={`${r}-${c}`} className={`mini-cell ${cell ? `p${cell}` : ""} ${isWin(r, c) ? "win" : ""}`} />);
+    <div className="lv-board" role="img" aria-label={`Tablero de la partida ${game.game_id}`}>
+      {[...game.board].reverse().map((row, i) => {
+        const r = rows - 1 - i; // fila 0 abajo
+        return row.map((cell, c) => {
+          const cls = [
+            "lv-cell",
+            cell ? `p${cell}` : "",
+            last && last[0] === r && last[1] === c ? "last" : "",
+            winning.some(([wr, wc]) => wr === r && wc === c) ? "win" : "",
+          ].join(" ");
+          return <span key={`${r}-${c}`} className={cls} />;
+        });
       })}
     </div>
   );
 }
 
-function Players({ game }: { game: GameSummary }) {
+function PlayerTag({ game, p }: { game: GameSummary; p: "1" | "2" }) {
+  const toMove = game.current === Number(p);
+  const won = game.result?.winner === Number(p);
   return (
-    <div className="players">
-      {(["1", "2"] as const).map((p) => (
-        <span key={p} className={`player p${p} ${game.current === Number(p) ? "to-move" : ""}`}>
-          <span className="dot" />
-          {game.players[p].name}
-          {game.players[p].house && <small> (casa)</small>}
-        </span>
-      ))}
-    </div>
+    <span className={`lv-player p${p} ${toMove ? "to-move" : ""} ${won ? "won" : ""}`}>
+      <span className="dot" />
+      {game.players[p].name}
+    </span>
   );
 }
 
 function resultText(game: GameSummary): string {
   const r = game.result;
-  if (!r) return "";
+  if (!r) return "En curso";
   if (r.winner === null) return "Empate";
-  const name = game.players[String(r.winner) as "1" | "2"].name;
   let detail = REASONS[r.reason] ?? r.reason;
   if (r.reason === "timeout" && r.ms !== undefined) detail += ` (${r.ms} ms)`;
   if (r.reason === "absent" && r.waited_ms !== undefined) detail += ` (${Math.round(r.waited_ms / 1000)} s)`;
   if (r.reason === "illegal_move" && r.column !== undefined) detail += ` (columna ${String(r.column)})`;
-  return `Gana ${name} · ${detail}`;
+  return `Gana ${game.players[String(r.winner) as "1" | "2"].name} ${detail}`;
+}
+
+function GameCard({ game }: { game: Game }) {
+  return (
+    <article className="lv-card">
+      <div className="lv-card-head">
+        <span className="lv-kind">{KINDS[game.kind] ?? game.kind}</span>
+        <span className="lv-faint">{game.result ? game.game_id : `jugada ${game.moves.length + 1}`}</span>
+      </div>
+      <Board game={game} />
+      <div className="lv-card-foot">
+        <PlayerTag game={game} p="1" />
+        <PlayerTag game={game} p="2" />
+      </div>
+    </article>
+  );
 }
 
 function Replay({ id, onClose }: { id: string; onClose: () => void }) {
   const [game, setGame] = useState<Game | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
+    setGame(null);
+    setError(false);
     fetch(`/api/games/${encodeURIComponent(id)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setGame)
       .catch(() => setError(true));
   }, [id]);
   return (
-    <div className="card replay">
-      <div className="card-head">
-        <strong>Partida {id}</strong>
-        <button className="link" onClick={onClose}>
+    <div className="lv-replay">
+      <div className="lv-section-head">
+        <h3>Partida {id}</h3>
+        <button className="lv-link" onClick={onClose}>
           Cerrar
         </button>
       </div>
-      {error && <p className="muted">No se pudo cargar la partida.</p>}
+      {error && <p className="lv-empty">No se pudo cargar la partida.</p>}
       {game && (
-        <>
-          <Players game={game} />
-          <MiniBoard board={game.board} winning={game.result?.winning_cells} />
-          <p className="muted">
-            {resultText(game) || "En curso"} · {game.moves.length} jugadas · columnas:{" "}
-            {game.moves.map((m) => m.column + 1).join(" ")}
-          </p>
-        </>
+        <div className="lv-replay-body">
+          <GameCard game={game} />
+          <div className="lv-replay-info">
+            <p>
+              <strong>{resultText(game)}</strong>
+            </p>
+            <p className="lv-faint">
+              {game.moves.length} jugadas · {timeOf(game.started_at)} – {timeOf(game.finished_at)}
+            </p>
+            <p className="lv-faint">Columnas (1–8): {game.moves.map((m) => m.column + 1).join(" ")}</p>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -146,50 +185,61 @@ export default function Live() {
   }, []);
 
   const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const leagueTeams = snap?.teams.filter((t) => !t.test).length ?? 0;
 
   return (
-    <section className="live">
-      <div className="live-bar">
-        <span className={`badge ${connected ? "on" : ""}`}>{connected ? "● En vivo" : "○ Conectando…"}</span>
-        {snap && <span className="badge">{PHASES[snap.phase] ?? snap.phase}</span>}
-        {snap && (
-          <span className="muted">
-            {snap.rules.deadline_ms / 1000} s por jugada · {snap.rules.absence_ms / 1000} s de ausencia
-          </span>
-        )}
+    <section className="lv">
+      <div className="lv-hero">
+        <div>
+          <p className="lv-eyebrow">
+            {snap ? (PHASES[snap.phase] ?? snap.phase) : "…"}
+            <span className={`lv-status ${connected ? "on" : ""}`} title={connected ? "Conectado" : "Reconectando"} />
+          </p>
+          <h1 className="lv-title">Tablero en vivo</h1>
+        </div>
+        <div className="lv-stats">
+          <div className="lv-stat">
+            <strong>{leagueTeams}</strong>
+            <span>Equipos</span>
+          </div>
+          <div className="lv-stat">
+            <strong>{snap?.live.length ?? 0}</strong>
+            <span>En juego</span>
+          </div>
+        </div>
       </div>
 
       {snap && !snap.shared_state && (
-        <p className="warn">
+        <p className="lv-warn">
           Este árbitro guarda el estado en memoria y en Vercel cada instancia tiene el suyo. Conecta Upstash Redis
           (Vercel → Storage) para que todas las rutas vean las mismas partidas.
         </p>
       )}
-      {snap?.announcement && <p className="announce">{snap.announcement}</p>}
+      {snap?.announcement && <p className="lv-announce">{snap.announcement}</p>}
 
       {replay && <Replay id={replay} onClose={() => setReplay(null)} />}
 
-      <h2>Partidas en curso</h2>
-      {snap && snap.live.length === 0 && <p className="muted">No hay partidas en curso. Crea una práctica con tu bot.</p>}
-      <div className="games">
-        {snap?.live.map((game) => (
-          <article key={game.game_id} className="card">
-            <div className="card-head">
-              <span>
-                {game.game_id} · {KINDS[game.kind] ?? game.kind}
-              </span>
-              <span className="muted">jugada {game.moves.length + 1}</span>
-            </div>
-            <Players game={game} />
-            <MiniBoard board={game.board} />
-          </article>
-        ))}
+      <div className="lv-section-head">
+        <h2>En juego</h2>
+        {snap && (
+          <span className="lv-faint">
+            {snap.rules.deadline_ms / 1000} s por jugada · {snap.rules.absence_ms / 1000} s de ausencia
+          </span>
+        )}
       </div>
+      {snap && snap.live.length === 0 ? (
+        <p className="lv-empty">Ninguna partida en curso.</p>
+      ) : (
+        <div className="lv-games">{snap?.live.map((game) => <GameCard key={game.game_id} game={game} />)}</div>
+      )}
 
-      <div className="two-cols">
+      <div className="lv-two">
         <div>
-          <h2>Posiciones</h2>
-          <table className="standings">
+          <div className="lv-section-head">
+            <h2>Posiciones</h2>
+            <span className="lv-faint lv-spaced">V 3 · E 1 · D 0</span>
+          </div>
+          <table className="lv-table">
             <thead>
               <tr>
                 <th>#</th>
@@ -198,7 +248,9 @@ export default function Live() {
                 <th title="Victorias">V</th>
                 <th title="Empates">E</th>
                 <th title="Derrotas">D</th>
-                <th title="Puntos">Pts</th>
+                <th className="right" title="Puntos">
+                  Pts
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -210,35 +262,45 @@ export default function Live() {
                   <td>{row.won}</td>
                   <td>{row.drawn}</td>
                   <td>{row.lost}</td>
-                  <td>
+                  <td className="right">
                     <strong>{row.points}</strong>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="muted small">Liga: V 3 · E 1 · D 0. Desempates: puntos, enfrentamiento directo, diferencia V−D y sorteo.</p>
+          <p className="lv-faint lv-small">Desempates: puntos, enfrentamiento directo, diferencia V−D, sorteo.</p>
         </div>
 
         <div>
-          <h2>Últimos resultados</h2>
-          {snap && snap.recent.length === 0 && <p className="muted">Todavía no termina ninguna partida.</p>}
-          <ul className="recent">
-            {snap?.recent.map((game) => (
-              <li key={game.game_id}>
-                <button className="link" onClick={() => setReplay(game.game_id)}>
-                  {game.players["1"].name} vs {game.players["2"].name}
-                </button>
-                <span className="muted small">
-                  {KINDS[game.kind] ?? game.kind} · {resultText(game)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="lv-section-head">
+            <h2>Últimos resultados</h2>
+          </div>
+          {snap && snap.recent.length === 0 ? (
+            <p className="lv-empty">Todavía no hay resultados.</p>
+          ) : (
+            <ul className="lv-results">
+              {snap?.recent.map((game) => (
+                <li key={game.game_id}>
+                  <button className="lv-result" onClick={() => setReplay(game.game_id)}>
+                    <span className="lv-kind">{KINDS[game.kind] ?? game.kind}</span>
+                    <span className="lv-vs">
+                      <PlayerTag game={game} p="1" />
+                      <span className="lv-faint">vs</span>
+                      <PlayerTag game={game} p="2" />
+                    </span>
+                    <span className="lv-faint lv-small">
+                      {resultText(game)} · {timeOf(game.finished_at)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
-      <details className="card connect">
+      <details className="lv-connect">
         <summary>Conectar un bot a este árbitro</summary>
         <pre>{`export ARBITRO_URL=${origin}
 export TEAM_TOKEN=<token del equipo>
@@ -250,7 +312,7 @@ curl -s -X POST "$ARBITRO_URL/api/practice" \\
 
 # o correr el bot del equipo apuntando aquí
 ARBITRO_URL=$ARBITRO_URL TEAM_TOKEN=$TEAM_TOKEN npm run bot`}</pre>
-        <p className="muted small">
+        <p className="lv-faint lv-small">
           Contrato: <a href="/api/openapi.json">/api/openapi.json</a> (OpenAPI 1.0.1).
         </p>
       </details>

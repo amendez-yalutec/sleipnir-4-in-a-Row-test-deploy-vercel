@@ -54,7 +54,7 @@ Las rutas `/api/*` las atiende una sola función (`api/index.ts`, ver `vercel.js
 
 | Variable | Para qué |
 |---|---|
-| `ARBITRO_TEAMS` | Equipos propios: `id:token:Nombre;id2:token2:Nombre 2`. Sin ella se usan los tokens de juguete, que son públicos. |
+| `ARBITRO_TEAMS` | Equipos propios: `id:token:Nombre;id2:token2:Nombre 2`. Un `~` antes del id marca un equipo de prueba (juega pero no sale en la tabla): `~prueba1:tok:Prueba 1`. Sin la variable se usan los tokens de juguete, que son públicos. |
 | `ARBITRO_ADMIN_TOKEN` | Activa `/api/admin/*` en Vercel (en local el token es `admin-local`). |
 | `ARBITRO_DEADLINE_MS`, `ARBITRO_ABSENCE_MS` | Cambiar los 3,000 ms y 30,000 ms. |
 
