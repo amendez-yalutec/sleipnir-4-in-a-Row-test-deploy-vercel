@@ -705,6 +705,133 @@ footer {
   color: var(--p2);
 }
 
+.lv-panel {
+  background: var(--panel);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.lv-form h2,
+.lv-form h3 {
+  font-size: 1.4rem;
+}
+
+.lv-form > .lv-faint {
+  margin: 0;
+}
+
+.lv-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.lv-form input,
+.lv-form select {
+  font: inherit;
+  font-weight: 400;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 4px;
+  min-width: 0;
+}
+
+.lv-btn {
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--navy);
+  color: #fff;
+  cursor: pointer;
+}
+
+.lv-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lv-btn.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.lv-btn.danger {
+  background: #b91c1c;
+}
+
+.lv-msg {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  border-left: 4px solid;
+}
+
+.lv-msg.ok {
+  border-color: #16a34a;
+  background: rgb(22 163 74 / 0.1);
+}
+
+.lv-msg.error {
+  border-color: #dc2626;
+  background: rgb(220 38 38 / 0.1);
+}
+
+.lv-myteam {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lv-grid3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.lv-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.lv-series {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.lv-series-score {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.05rem;
+}
+
+.lv-series-score span:last-child {
+  text-align: right;
+}
+
+.lv-series-score strong {
+  font-family: "Barlow Condensed", system-ui, sans-serif;
+  font-size: 2rem;
+}
+
+.lv-series-score .won {
+  font-weight: 700;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cell.drop,
   .cell.win {

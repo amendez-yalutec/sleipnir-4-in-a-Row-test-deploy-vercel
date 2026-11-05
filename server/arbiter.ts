@@ -104,25 +104,159 @@ function prune(state: ArbiterState): void {
   state.games = state.games.filter((g) => !drop.has(g.id));
 }
 
-export function createGame(state: ArbiterState, kind: GameKind, first: Seat, second: Seat, now: number): Game {
+export interface CreateOptions {
+  /** Queda programada: arranca cuando ninguno de sus equipos esté jugando otra partida. */
+  scheduled?: boolean;
+  matchId?: string;
+}
+
+export function createGame(
+  state: ArbiterState,
+  kind: GameKind,
+  first: Seat,
+  second: Seat,
+  now: number,
+  options: CreateOptions = {},
+): Game {
   const n = ++state.seq;
   const game: Game = {
     id: kind === "practice" ? `g_p_${String(n).padStart(2, "0")}` : `g_${n}`,
-    matchId: matchIdFor(kind, n),
+    matchId: options.matchId ?? matchIdFor(kind, n),
     kind,
     series: kind === "third_place" ? "third" : kind === "final" ? "final" : null,
     seats: { 1: first, 2: second },
     moves: [],
-    startedAt: now,
+    startedAt: options.scheduled ? null : now,
     pending: null,
     result: null,
     finishedAt: null,
     deadlineMissedAt: null,
   };
   state.games.push(game);
-  advance(game, now);
+  if (!options.scheduled) advance(game, now);
   prune(state);
   return game;
+}
+
+// ── Torneo: partidas programadas, liga y playoffs ─────────────────────────────────────────────
+
+const seatKey = (seat: Seat) => (seat.type === "team" ? seat.id : `casa:${seat.bot}`);
+
+/** Equipos con una partida en curso: cada equipo juega una a la vez. */
+function busyTeams(state: ArbiterState): Set<string> {
+  const busy = new Set<string>();
+  for (const g of state.games) {
+    if (g.startedAt === null || g.result) continue;
+    for (const p of [1, 2] as const) if (g.seats[p].type === "team") busy.add(seatKey(g.seats[p]));
+  }
+  return busy;
+}
+
+const startable = (g: Game, busy: Set<string>) =>
+  g.startedAt === null &&
+  !g.result &&
+  ([1, 2] as const).every((p) => g.seats[p].type === "house" || !busy.has(seatKey(g.seats[p])));
+
+/** Arranca, en orden, las partidas programadas cuyos equipos están libres (varias en paralelo). */
+function startScheduled(state: ArbiterState, now: number): boolean {
+  const busy = busyTeams(state);
+  let changed = false;
+  for (const g of state.games) {
+    if (!startable(g, busy)) continue;
+    g.startedAt = now;
+    advance(g, now);
+    for (const p of [1, 2] as const) if (g.seats[p].type === "team") busy.add(seatKey(g.seats[p]));
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Liga: todos contra todos, ida y vuelta (cada pareja juega dos partidas, abriendo una cada uno).
+ * Las de ida van primero; la vuelta comparte match_id con su ida.
+ */
+export function scheduleLeague(state: ArbiterState, teams: TeamInfo[], now: number): Reply {
+  const ids = teams.filter((t) => !t.test).map((t) => t.id);
+  if (ids.length < 2) return errorReply(400, "validation", "La liga necesita al menos dos equipos.");
+  if (state.games.some((g) => g.kind === "league")) return errorReply(409, "validation", "La liga ya se programó.");
+  const pairs: [string, string][] = [];
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) pairs.push([ids[i], ids[j]]);
+  const legs = [...pairs.map(([a, b], i) => ({ a, b, i })), ...pairs.map(([a, b], i) => ({ a: b, b: a, i }))];
+  for (const { a, b, i } of legs) {
+    createGame(state, "league", { type: "team", id: a }, { type: "team", id: b }, now, {
+      scheduled: true,
+      matchId: `m_${String(i + 1).padStart(2, "0")}`,
+    });
+  }
+  state.phase = "league";
+  return { status: 201, body: { ok: true, games: legs.length } };
+}
+
+/** Playoffs al mejor de tres: final (1.º vs 2.º) y tercer puesto (3.º vs 4.º) según la tabla. */
+export function schedulePlayoffs(state: ArbiterState, ranking: string[], now: number): Reply {
+  if (ranking.length < 2) return errorReply(400, "validation", "Los playoffs necesitan al menos dos equipos.");
+  if (state.playoffs.length) return errorReply(409, "validation", "Los playoffs ya se programaron.");
+  const team = (id: string): Seat => ({ type: "team", id });
+  state.playoffs.push({ name: "final", seats: [team(ranking[0]), team(ranking[1])], wins: [0, 0], winner: null });
+  if (ranking.length >= 4) {
+    state.playoffs.unshift({ name: "third", seats: [team(ranking[2]), team(ranking[3])], wins: [0, 0], winner: null });
+  }
+  state.phase = "playoffs";
+  progressPlayoffs(state, now);
+  return { status: 201, body: { ok: true, series: state.playoffs.map((s) => s.name) } };
+}
+
+/** Máximo de partidas por serie: al mejor de tres, más desempate si hubo empates. */
+const MAX_SERIES_GAMES = 5;
+
+/** Cuenta victorias de cada serie y programa la siguiente partida si nadie llegó a dos. */
+function progressPlayoffs(state: ArbiterState, now: number): boolean {
+  let changed = false;
+  for (const series of state.playoffs) {
+    if (series.winner !== null) continue;
+    const kind: GameKind = series.name === "final" ? "final" : "third_place";
+    const games = state.games.filter((g) => g.series === series.name);
+    if (games.some((g) => !g.result)) continue;
+    const wins: [number, number] = [0, 0];
+    for (const g of games) {
+      const w = g.result!.winner;
+      if (w === null) continue;
+      wins[seatKey(g.seats[w]) === seatKey(series.seats[0]) ? 0 : 1]++;
+    }
+    series.wins = wins;
+    if (wins[0] >= 2 || wins[1] >= 2 || games.length >= MAX_SERIES_GAMES) {
+      // Si se agotan las partidas sin dos victorias, gana el mejor sembrado o quien lleve más.
+      series.winner = wins[1] > wins[0] ? 1 : 0;
+      changed = true;
+      continue;
+    }
+    const [a, b] = games.length % 2 === 0 ? series.seats : [series.seats[1], series.seats[0]];
+    createGame(state, kind, a, b, now, { scheduled: true, matchId: `${series.name}_${games.length + 1}` });
+    changed = true;
+  }
+  if (state.phase === "playoffs" && state.playoffs.length && state.playoffs.every((s) => s.winner !== null)) {
+    state.phase = "finished";
+    changed = true;
+  }
+  return changed;
+}
+
+/** ¿Hay algo que cerrar, arrancar o programar? (evita escribir en cada lectura) */
+export function needsTick(state: ArbiterState, ctx: Ctx): boolean {
+  if (needsSweep(state, ctx)) return true;
+  const busy = busyTeams(state);
+  if (state.games.some((g) => startable(g, busy))) return true;
+  return state.playoffs.some(
+    (s) => s.winner === null && !state.games.some((g) => g.series === s.name && !g.result),
+  );
+}
+
+/** Mantenimiento del torneo: ausencias y plazos, playoffs y partidas programadas. */
+export function tick(state: ArbiterState, ctx: Ctx): boolean {
+  let changed = sweep(state, ctx);
+  changed = progressPlayoffs(state, ctx.now) || changed;
+  changed = startScheduled(state, ctx.now) || changed;
+  return changed;
 }
 
 export const practiceOpen = (state: ArbiterState) => state.phase === "practice";
@@ -211,7 +345,8 @@ export function submitMove(state: ArbiterState, team: TeamInfo, gameId: string, 
   const ms = ctx.now - servedAt;
   if (!positionOf(game).legal.includes(column)) {
     forfeit(game, seat, "illegal_move", ctx.now, { ms, column });
-    return errorReply(400, "illegal_move", `La columna ${column} está llena.`);
+    const why = column >= 0 && column <= 7 ? "está llena" : "está fuera de rango (0 a 7)";
+    return errorReply(400, "illegal_move", `La columna ${column} ${why}.`);
   }
 
   const after = recordMove(game, column, ms, ctx.now);

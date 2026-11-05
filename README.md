@@ -4,8 +4,12 @@
 probar el bot del equipo contra algo con red de verdad. Incluye un **tablero en vivo** y el demo para jugar
 en el navegador.
 
-> No es el árbitro oficial. Reproduce el contrato y las reglas de operación del mock del equipo
-> (`tools/mock-arbiter`): mismo JSON, mismos errores y mismos supuestos.
+> No es el árbitro oficial. Sigue el contrato, las bases del challenge (`Bases_Challenge_Cuatro_en_Linea.pdf`)
+> y las reglas de operación del mock del equipo (`tools/mock-arbiter`).
+
+La web tiene cuatro pestañas: **En vivo** (tablero público), **Mi equipo** (con el token: posición, crear
+prácticas y registrar la entrega, como pide la sección "Registro de la entrega" de las bases), **Admin** (liga,
+playoffs, fases y anuncios) y **Jugar demo**.
 
 ## Qué implementa
 
@@ -18,8 +22,13 @@ en el navegador.
 | `GET /api/games`, `/api/games/{id}` | Partidas públicas con `team_id`, `house`, `series`, `current` y `forfeited_by`. |
 | `GET /api/standings`, `/api/state`, `/api/live`, `/api/health`, `/api/openapi.json` | Tabla, snapshot, Server-Sent Events, latido y el contrato. |
 
-Reglas: 3 s por jugada desde `served_at`, 30 s de ausencia, liga V 3 · E 1 · D 0, desempates por puntos,
-enfrentamiento directo, diferencia V−D y sorteo.
+Reglas (bases del challenge): 3 s por jugada desde `served_at`, 30 s de ausencia; derrota automática por
+columna llena **o fuera de rango**, tiempo o ausencia.
+
+Torneo: **liga** todos contra todos, ida y vuelta (la vuelta comparte `match_id` con la ida), varias partidas en
+paralelo pero **cada equipo juega una a la vez** (las demás quedan `scheduled`); V 3 · E 1 · D 0; desempates por
+puntos, enfrentamiento directo, diferencia V−D y sorteo. **Playoffs**: final (1.º vs 2.º) y tercer puesto (3.º vs
+4.º) al mejor de tres, alternando quién abre; al terminar, la fase pasa a `finished`.
 
 **Equipos por defecto** (tokens de juguete, los mismos del mock): `eq6` → `token-local-eq6` y `rival` →
 `token-local-rival`.
@@ -62,7 +71,9 @@ Las rutas `/api/*` las atiende una sola función (`api/index.ts`, ver `vercel.js
 
 ```bash
 A="Authorization: Bearer $ARBITRO_ADMIN_TOKEN"
-curl -X POST $URL/api/admin/games -H "$A" -d '{"kind":"league","player1":"eq6","player2":"rival"}'
+curl -X POST $URL/api/admin/league -H "$A" -d '{}'                         # liga completa, ida y vuelta
+curl -X POST $URL/api/admin/playoffs -H "$A" -d '{}'                       # final y 3.er puesto (al terminar la liga)
+curl -X POST $URL/api/admin/games -H "$A" -d '{"kind":"friendly","player1":"eq6","player2":"rival"}'
 curl -X POST $URL/api/admin/phase -H "$A" -d '{"phase":"frozen"}'          # practice|frozen|league|playoffs|finished
 curl -X POST $URL/api/admin/announcement -H "$A" -d '{"text":"Liga a las 10:00"}'
 curl -X POST $URL/api/admin/forfeit -H "$A" -d '{"game_id":"g_3","loser":2}'
@@ -71,9 +82,11 @@ curl -X POST $URL/api/admin/reset -H "$A" -d '{}'
 
 `player1`/`player2` aceptan ids de equipo o `casa-aleatorio` / `casa-basico`.
 
-## Supuestos (iguales al mock del equipo)
+## Supuestos
 
-- `column` fuera de 0–7 o que no es entero → `400 validation` (no pierde); columna llena → `400 illegal_move`.
+- `column` entero fuera de 0–7 → `400 illegal_move` y pierde (las bases lo dicen así). `column` que no es entero
+  o falta → `400 validation`, no pierde. **El mock del equipo responde `validation` a la columna 9**: es la única
+  diferencia de contrato con él.
 - Pedir dos veces el mismo turno devuelve el mismo `served_at`.
 - Jugar sin haber pedido el turno se acepta y cuenta desde ese momento.
 - Los bots de la casa responden al instante, así que reintentar un `POST /api/move` cuya respuesta se perdió

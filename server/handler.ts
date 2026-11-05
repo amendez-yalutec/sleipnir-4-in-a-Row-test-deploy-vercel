@@ -8,11 +8,13 @@ import {
   createGame,
   createPractice,
   findTurn,
-  needsSweep,
+  needsTick,
   pendingTurns,
+  scheduleLeague,
+  schedulePlayoffs,
   submissionsOpen,
   submitMove,
-  sweep,
+  tick,
 } from "./arbiter.js";
 import { type ArbiterConfig, loadConfig } from "./config.js";
 import { gameJson, gameSummary, namesFrom, stateSnapshot, turnJson } from "./json.js";
@@ -25,6 +27,7 @@ import {
   type GameKind,
   PHASES,
   type Phase,
+  type ArbiterState,
   type Reply,
   type Seat,
   type TeamInfo,
@@ -80,7 +83,6 @@ async function readBody(request: Request): Promise<Body> {
 }
 
 const invalidJson = errorReply(400, "validation", "JSON inválido.");
-const isColumn = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 7;
 
 /** Ruta real: Vercel puede entregar la reescritura como /api/index?__path=… */
 function routeOf(request: Request): { path: string; query: URLSearchParams; origin: string } {
@@ -120,11 +122,20 @@ export function createHandler(options: HandlerOptions = {}) {
     return config.adminToken !== null && token !== null && safeEqual(config.adminToken, token);
   };
 
-  /** Estado con las ausencias y plazos vencidos ya aplicados. */
+  /** Escritura con exclusión mutua; antes y después corre el mantenimiento del torneo. */
+  const write = <T,>(fn: (s: ArbiterState) => T) =>
+    store.update((s) => {
+      tick(s, ctx());
+      const result = fn(s);
+      tick(s, ctx());
+      return result;
+    });
+
+  /** Estado con ausencias, plazos y partidas programadas ya aplicados. */
   async function fresh() {
     const state = await store.read();
-    if (!needsSweep(state, ctx())) return state;
-    return store.update((s) => (sweep(s, ctx()), s));
+    if (!needsTick(state, ctx())) return state;
+    return write((s) => s);
   }
 
   const extras = () => ({
@@ -144,14 +155,12 @@ export function createHandler(options: HandlerOptions = {}) {
     const until = Date.now() + wait * 1000;
     for (;;) {
       const state = await store.read();
-      if (needsSweep(state, ctx()) || findTurn(state, team.id)) {
-        const turn = await store.update((s) => {
-          const now = ctx();
-          sweep(s, now);
+      if (needsTick(state, ctx()) || findTurn(state, team.id)) {
+        const turn = await write((s) => {
           const found = findTurn(s, team.id);
           if (!found) return null;
           // El reloj arranca la primera vez que se entrega el turno; pedirlo otra vez no lo reinicia.
-          found.game.pending!.servedAt ??= now.now;
+          found.game.pending!.servedAt ??= Date.now();
           return turnJson(found.game, found.seat, config.deadlineMs, names);
         });
         if (turn) return json(turn);
@@ -167,8 +176,10 @@ export function createHandler(options: HandlerOptions = {}) {
     if (!body.ok) return reply(invalidJson);
     const { game_id, column } = body.value;
     if (typeof game_id !== "string" || game_id === "") return reply(errorReply(400, "validation", "game_id es obligatorio."));
-    if (!isColumn(column)) return reply(errorReply(400, "validation", "column debe ser un entero de 0 a 7."));
-    return reply(await store.update((s) => submitMove(s, team, game_id, column, ctx())));
+    // Un entero fuera de 0–7 es jugada ilegal y pierde (bases: "columna llena o fuera de rango");
+    // lo que no es entero es un cuerpo inválido y no penaliza.
+    if (!Number.isInteger(column)) return reply(errorReply(400, "validation", "column debe ser un entero de 0 a 7."));
+    return reply(await write((s) => submitMove(s, team, game_id, column as number, ctx())));
   }
 
   async function practice(request: Request, team: TeamInfo): Promise<Response> {
@@ -177,7 +188,7 @@ export function createHandler(options: HandlerOptions = {}) {
     const { opponent = "casa-basico", first = 1 } = body.value;
     if (!isHouseBot(opponent)) return reply(errorReply(400, "validation", `Rival inválido: ${String(opponent)}.`));
     if (first !== 1 && first !== 2) return reply(errorReply(400, "validation", "first debe ser 1 o 2."));
-    return reply(await store.update((s) => createPractice(s, team, opponent, first as Player, Date.now())));
+    return reply(await write((s) => createPractice(s, team, opponent, first as Player, Date.now())));
   }
 
   // ── Equipo ──────────────────────────────────────────────────────────────────────────────────
@@ -207,7 +218,7 @@ export function createHandler(options: HandlerOptions = {}) {
       return reply(errorReply(400, "validation", "commit debe ser un hash hexadecimal de 7 a 40 caracteres."));
     }
     return reply(
-      await store.update((s) => {
+      await write((s) => {
         if (!submissionsOpen(s)) return errorReply(423, "submissions_closed", "Las entregas están cerradas.");
         const record = { repo_url, commit, registered_at: new Date().toISOString() };
         s.submissions[team.id] = record;
@@ -312,7 +323,7 @@ export function createHandler(options: HandlerOptions = {}) {
         if (p1.type === "team" && p2.type === "team" && p1.id === p2.id) {
           return reply(errorReply(400, "validation", "Un equipo no puede jugar contra sí mismo."));
         }
-        const game = await store.update((s) => createGame(s, kind, p1, p2, Date.now()));
+        const game = await write((s) => createGame(s, kind, p1, p2, Date.now()));
         return json({ game_id: game.id }, 201);
       }
       case "phase": {
@@ -331,8 +342,19 @@ export function createHandler(options: HandlerOptions = {}) {
         if (typeof v.game_id !== "string" || (v.loser !== 1 && v.loser !== 2)) {
           return reply(errorReply(400, "validation", "game_id y loser (1 o 2) son obligatorios."));
         }
-        return reply(await store.update((s) => adminForfeit(s, v.game_id as string, v.loser as Player, Date.now())));
+        return reply(await write((s) => adminForfeit(s, v.game_id as string, v.loser as Player, Date.now())));
       }
+      case "league":
+        return reply(await write((s) => scheduleLeague(s, config.teams, Date.now())));
+      case "playoffs":
+        return reply(
+          await write((s) => {
+            const unfinished = s.games.some((g) => g.kind === "league" && !g.result);
+            if (unfinished) return errorReply(409, "validation", "La liga todavía tiene partidas pendientes.");
+            const ranking = computeStandings(config.teams, s.games).map((r) => r.team.id);
+            return schedulePlayoffs(s, ranking, Date.now());
+          }),
+        );
       case "reset": {
         await store.update((s) => void Object.assign(s, initialState()));
         return json({ ok: true });

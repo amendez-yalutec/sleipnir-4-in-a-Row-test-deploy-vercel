@@ -41,7 +41,8 @@ export function redisStore(url: string, token: string, prefix: string): Store {
   const key = `${prefix}:state`;
   const lock = `${prefix}:lock`;
 
-  const read = async () => (await redis.get<ArbiterState>(key)) ?? initialState();
+  // Completa campos nuevos si el estado guardado es de una versión anterior.
+  const read = async () => ({ ...initialState(), ...((await redis.get<ArbiterState>(key)) ?? {}) });
 
   return {
     kind: "redis",

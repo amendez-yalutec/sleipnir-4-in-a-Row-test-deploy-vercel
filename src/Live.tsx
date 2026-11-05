@@ -35,7 +35,9 @@ type Snapshot = {
   teams: { id: string; name: string; test?: true }[];
   standings: Standing[];
   live: Game[];
+  scheduled: number;
   recent: GameSummary[];
+  series: { series: "third" | "final"; players: PlayerRef[]; wins: [number, number]; winner: PlayerRef | null }[];
 };
 
 const PHASES: Record<string, string> = {
@@ -206,6 +208,12 @@ export default function Live() {
             <strong>{snap?.live.length ?? 0}</strong>
             <span>En juego</span>
           </div>
+          {!!snap?.scheduled && (
+            <div className="lv-stat">
+              <strong>{snap.scheduled}</strong>
+              <span>Programadas</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -218,6 +226,30 @@ export default function Live() {
       {snap?.announcement && <p className="lv-announce">{snap.announcement}</p>}
 
       {replay && <Replay id={replay} onClose={() => setReplay(null)} />}
+
+      {!!snap?.series.length && (
+        <>
+          <div className="lv-section-head">
+            <h2>Playoffs</h2>
+            <span className="lv-faint">al mejor de tres</span>
+          </div>
+          <div className="lv-series">
+            {snap.series.map((s) => (
+              <div key={s.series} className="lv-panel">
+                <span className="lv-kind">{s.series === "final" ? "Final" : "Tercer puesto"}</span>
+                <div className="lv-series-score">
+                  <span className={s.winner?.team_id === s.players[0].team_id ? "won" : ""}>{s.players[0].name}</span>
+                  <strong>
+                    {s.wins[0]} – {s.wins[1]}
+                  </strong>
+                  <span className={s.winner?.team_id === s.players[1].team_id ? "won" : ""}>{s.players[1].name}</span>
+                </div>
+                <span className="lv-faint lv-small">{s.winner ? `Gana ${s.winner.name}` : "En curso"}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="lv-section-head">
         <h2>En juego</h2>

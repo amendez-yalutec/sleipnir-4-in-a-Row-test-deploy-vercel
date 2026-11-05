@@ -54,7 +54,8 @@ export interface Game {
   series: "third" | "final" | null;
   seats: { 1: Seat; 2: Seat };
   moves: MoveRecord[];
-  startedAt: number;
+  /** null mientras la partida está programada (liga o playoffs que aún no arrancan). */
+  startedAt: number | null;
   pending: Pending | null;
   result: GameResult | null;
   finishedAt: number | null;
@@ -68,6 +69,16 @@ export interface SubmissionRecord {
   registered_at: string;
 }
 
+/** Serie de playoffs al mejor de tres (tercer puesto o final). */
+export interface SeriesState {
+  name: "third" | "final";
+  /** [mejor sembrado, el otro]; el mejor sembrado abre la primera partida. */
+  seats: [Seat, Seat];
+  wins: [number, number];
+  /** Índice en `seats` del ganador, o null si sigue. */
+  winner: 0 | 1 | null;
+}
+
 export interface ArbiterState {
   version: 1;
   seq: number;
@@ -76,6 +87,7 @@ export interface ArbiterState {
   /** De la más antigua a la más reciente. */
   games: Game[];
   submissions: Record<string, SubmissionRecord>;
+  playoffs: SeriesState[];
 }
 
 export const initialState = (): ArbiterState => ({
@@ -85,6 +97,7 @@ export const initialState = (): ArbiterState => ({
   announcement: null,
   games: [],
   submissions: {},
+  playoffs: [],
 });
 
 export interface Reply {

@@ -59,12 +59,12 @@ export function gameSummary(game: Game, names: Names) {
     match_id: game.matchId,
     kind: game.kind,
     series: game.series,
-    status: game.result ? ("finished" as const) : ("playing" as const),
+    status: game.result ? ("finished" as const) : game.startedAt === null ? ("scheduled" as const) : ("playing" as const),
     players: { "1": playerRef(game.seats[1], names), "2": playerRef(game.seats[2], names) },
     moves: game.moves,
-    current: game.result ? null : ((game.moves.length % 2 === 0 ? 1 : 2) as Player),
+    current: game.result || game.startedAt === null ? null : ((game.moves.length % 2 === 0 ? 1 : 2) as Player),
     result: game.result && resultJson(game.result),
-    started_at: iso(game.startedAt),
+    started_at: game.startedAt === null ? null : iso(game.startedAt),
     finished_at: game.finishedAt === null ? null : iso(game.finishedAt),
   };
 }
@@ -80,23 +80,13 @@ export function stateSnapshot(state: ArbiterState, teams: TeamInfo[], extra: Rec
   const names = namesFrom(teams);
   const recentFirst = [...state.games].reverse();
   const standings = computeStandings(teams, state.games);
-  const playoff = state.games.filter((g) => g.series);
-  const series = (["third", "final"] as const)
-    .map((name) => {
-      const games = playoff.filter((g) => g.series === name);
-      if (!games.length) return null;
-      const wins: Record<string, number> = {};
-      for (const g of games) {
-        const w = g.result?.winner;
-        if (w) {
-          const seat = g.seats[w];
-          const id = seat.type === "team" ? seat.id : seat.bot;
-          wins[id] = (wins[id] ?? 0) + 1;
-        }
-      }
-      return { series: name, games: games.map((g) => g.id), wins };
-    })
-    .filter(Boolean);
+  const series = state.playoffs.map((s) => ({
+    series: s.name,
+    players: s.seats.map((seat) => playerRef(seat, names)),
+    wins: s.wins,
+    winner: s.winner === null ? null : playerRef(s.seats[s.winner], names),
+    games: state.games.filter((g) => g.series === s.name).map((g) => g.id),
+  }));
 
   return {
     phase: state.phase,
@@ -104,7 +94,8 @@ export function stateSnapshot(state: ArbiterState, teams: TeamInfo[], extra: Rec
     ...extra,
     teams: teams.map((t) => ({ id: t.id, name: t.name, ...(t.test && { test: true }) })),
     standings,
-    live: recentFirst.filter((g) => !g.result).map((g) => gameJson(g, names)),
+    live: recentFirst.filter((g) => !g.result && g.startedAt !== null).map((g) => gameJson(g, names)),
+    scheduled: state.games.filter((g) => g.startedAt === null && !g.result).length,
     recent: recentFirst
       .filter((g) => g.result)
       .slice(0, 10)
