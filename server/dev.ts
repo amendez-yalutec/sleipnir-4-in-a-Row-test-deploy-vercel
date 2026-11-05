@@ -8,6 +8,15 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createHandler } from "./handler.js";
 import { loadConfig } from "./config.js";
 
+// Variables de `vercel env pull .env.development.local` (Upstash, etc.), si existen.
+for (const file of [".env.development.local", ".env.local"]) {
+  try {
+    process.loadEnvFile(file);
+  } catch {
+    /* no existe: se usa el estado en memoria */
+  }
+}
+
 const port = Number(process.env.ARBITRO_PORT ?? 8787);
 const host = process.env.ARBITRO_HOST ?? "127.0.0.1";
 const config = loadConfig();
@@ -47,4 +56,6 @@ createServer(async (req, res) => {
   console.log(`Árbitro de prueba en http://${host}:${port}`);
   console.log(`Equipos: ${config.teams.map((t) => `${t.id} (token ${t.token})`).join(", ")}`);
   console.log(`Admin: ${config.adminToken ? `token ${config.adminToken}` : "desactivado"}`);
+  const redis = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  console.log(`Estado: ${redis ? `Upstash Redis (${new URL(redis).host})` : "en memoria"}`);
 });
